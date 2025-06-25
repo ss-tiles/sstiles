@@ -2,15 +2,17 @@
   "name": "stock-register",
   "version": "1.0.0",
   "description": "Inventory Management System",
-  "homepage": "https://ss-tiles.github.io/sstiles",
   "main": "index.js",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "server": "nodemon server/index.js"
+    "server": "nodemon server/index.js",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
   },
+  "homepage": "https://ss-tiles.github.io/sstiles",
   "dependencies": {
     "@craco/craco": "^7.1.0",
     "@emotion/react": "^11.11.0",
@@ -58,6 +60,7 @@
   "devDependencies": {
     "@types/node": "^24.0.3",
     "autoprefixer": "^10.4.21",
+    "gh-pages": "^6.3.0",
     "nodemon": "^2.0.22",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.10"
