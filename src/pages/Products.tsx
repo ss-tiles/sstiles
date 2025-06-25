@@ -486,7 +486,7 @@ const Products: React.FC = () => {
                             </TableCell>
                             <TableCell>
                               <Typography variant="body2">
-                                ${product.unit_price.toFixed(2)}
+                                ₹{product.unit_price.toFixed(2)}
                               </Typography>
                             </TableCell>
                             <TableCell>

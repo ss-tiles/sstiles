@@ -20,7 +20,7 @@ import {
   TrendingUp as TrendingUpIcon,
   Inventory as InventoryIcon,
   Category as CategoryIcon,
-  AttachMoney as MoneyIcon,
+  CurrencyRupee as RupeeIcon,
   Warning as WarningIcon,
   ShoppingCart as ShoppingCartIcon
 } from '@mui/icons-material';
@@ -79,6 +79,10 @@ const Dashboard: React.FC = () => {
   const [categorySales, setCategorySales] = useState<CategorySales[]>([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  const formatCurrency = (amount: number) => {
+    return '₹' + amount.toFixed(2);
+  };
 
   useEffect(() => {
     fetchDashboardData();
@@ -285,8 +289,8 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Total Revenue"
-            value={`$${stats.totalRevenue.toFixed(2)}`}
-            icon={<MoneyIcon />}
+            value={stats.totalRevenue.toFixed(2)}
+            icon={<RupeeIcon />}
             color="success"
           />
         </Grid>
@@ -305,8 +309,8 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Today's Revenue"
-            value={`$${stats.todaysRevenue.toFixed(2)}`}
-            icon={<MoneyIcon />}
+            value={stats.todaysRevenue.toFixed(2)}
+            icon={<RupeeIcon />}
             color="info"
           />
         </Grid>
@@ -432,7 +436,7 @@ const Dashboard: React.FC = () => {
                           </TableCell>
                           <TableCell align="right">
                             <Typography variant="body2" fontWeight="medium">
-                              ${sale.total_amount.toFixed(2)}
+                              ₹{sale.total_amount.toFixed(2)}
                             </Typography>
                           </TableCell>
                         </TableRow>
@@ -483,12 +487,12 @@ const Dashboard: React.FC = () => {
                           </TableCell>
                           <TableCell align="right">
                             <Typography variant="body2" fontWeight="medium">
-                              ${category.total_revenue.toFixed(2)}
+                              ₹{category.total_revenue.toFixed(2)}
                             </Typography>
                           </TableCell>
                           <TableCell align="right">
                             <Typography variant="body2">
-                              ${category.total_sales > 0 ? (category.total_revenue / category.total_sales).toFixed(2) : '0.00'}
+                              ₹{category.total_sales > 0 ? (category.total_revenue / category.total_sales).toFixed(2) : '0.00'}
                             </Typography>
                           </TableCell>
                         </TableRow>

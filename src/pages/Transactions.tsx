@@ -717,7 +717,7 @@ const Transactions: React.FC = () => {
                         {option.name}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        SKU: {option.sku} | Stock: {option.quantity} | Price: ${option.unit_price}
+                        SKU: {option.sku} | Stock: {option.quantity} | Price: ₹{option.unit_price}
                       </Typography>
                     </Box>
                   </li>
