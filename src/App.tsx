@@ -17,6 +17,8 @@ import Dashboard from './pages/Dashboard.tsx';
 import Products from './pages/Products.tsx';
 import Categories from './pages/Categories.tsx';
 import Transactions from './pages/Transactions.tsx';
+import Purchases from './pages/Purchases.tsx';
+import Suppliers from './pages/Suppliers.tsx';
 import Auth from './pages/Auth.tsx';
 
 const theme = createTheme({
@@ -73,6 +75,8 @@ function App() {
                         <Route path="/products" element={<Products />} />
                         <Route path="/categories" element={<Categories />} />
                         <Route path="/transactions" element={<Transactions />} />
+                        <Route path="/purchases" element={<Purchases />} />
+                        <Route path="/suppliers" element={<Suppliers />} />
                       </Routes>
                     </Box>
                   </Box>

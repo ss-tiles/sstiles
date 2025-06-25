@@ -123,7 +123,7 @@ const Products: React.FC = () => {
         .from('subcategories')
         .select(`
           *,
-          main_category:main_categories(*)
+          main_category:main_category_id(id, name, description)
         `)
         .order('name');
 
@@ -134,8 +134,8 @@ const Products: React.FC = () => {
         .from('products')
         .select(`
           *,
-          main_category:main_categories(*),
-          subcategory:subcategories(*)
+          main_category:main_category_id(id, name, description),
+          subcategory:subcategory_id(id, name, description, main_category_id)
         `)
         .order('name');
 

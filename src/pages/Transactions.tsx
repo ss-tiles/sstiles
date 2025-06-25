@@ -48,8 +48,8 @@ interface Product {
   sku: string;
   quantity: number;
   unit_price: number;
-  main_category?: { name: string };
-  subcategory?: { name: string };
+  main_categories?: { name: string };
+  subcategories?: { name: string };
 }
 
 interface SaleItem {
@@ -108,8 +108,8 @@ const Transactions: React.FC = () => {
         .from('products')
         .select(`
           *,
-          main_category:main_categories(name),
-          subcategory:subcategories(name)
+          main_categories!products_main_category_id_fkey(name),
+          subcategories!products_subcategory_id_fkey(name)
         `)
         .gt('quantity', 0)
         .order('name');
@@ -140,6 +140,15 @@ const Transactions: React.FC = () => {
     }
   };
 
+  const generateSaleNumber = () => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const time = Date.now().toString().slice(-4);
+    return `SALE-${year}${month}${day}-${time}`;
+  };
+
   const handleSubmit = async () => {
     if (cartItems.length === 0) {
       setAlert({ type: 'error', message: 'Please add items to the cart' });
@@ -148,17 +157,23 @@ const Transactions: React.FC = () => {
 
     try {
       const totalAmount = cartItems.reduce((sum, item) => sum + item.total_price, 0);
+      const saleNumber = generateSaleNumber();
+      
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
 
       // Create sale
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert([{
+          sale_number: saleNumber,
           customer_name: formData.customer_name || null,
           customer_contact: formData.customer_contact || null,
           total_amount: totalAmount,
           payment_method: formData.payment_method,
           payment_status: 'completed',
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          created_by: user?.id
         }])
         .select()
         .single();
@@ -180,7 +195,50 @@ const Transactions: React.FC = () => {
 
       if (itemsError) throw itemsError;
 
-      setAlert({ type: 'success', message: `Sale ${saleData.sale_number} created successfully` });
+      // Update product quantities and create inventory movements
+      for (const item of cartItems) {
+        // Update product quantity
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ 
+            quantity: item.product!.quantity - item.quantity 
+          })
+          .eq('id', item.product_id);
+
+        if (updateError) throw updateError;
+
+        // Create inventory movement record
+        const { error: movementError } = await supabase
+          .from('inventory_movements')
+          .insert({
+            product_id: item.product_id,
+            movement_type: 'out',
+            quantity: -item.quantity, // Negative for outgoing stock
+            reference_type: 'sale',
+            reference_id: saleData.id,
+            notes: `Sale: ${saleNumber}`,
+            created_by: user?.id
+          });
+
+        if (movementError) throw movementError;
+      }
+
+      // Create financial transaction record
+      const { error: financeError } = await supabase
+        .from('financial_transactions')
+        .insert({
+          transaction_type: 'sale',
+          reference_type: 'sale',
+          reference_id: saleData.id,
+          amount: totalAmount,
+          description: `Sale ${saleNumber} - ${formData.customer_name || 'Walk-in Customer'}`,
+          payment_method: formData.payment_method,
+          created_by: user?.id
+        });
+
+      if (financeError) throw financeError;
+
+      setAlert({ type: 'success', message: `Sale ${saleNumber} created successfully` });
       fetchData();
       handleClose();
     } catch (error) {
@@ -334,7 +392,7 @@ const Transactions: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="medium">
-                        ${sale.total_amount.toFixed(2)}
+                        ₹{sale.total_amount.toLocaleString()}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -420,7 +478,7 @@ const Transactions: React.FC = () => {
                 onChange={(event, newValue) => setSelectedProduct(newValue)}
                 options={products}
                 getOptionLabel={(option) => `${option.name} (${option.sku}) - Stock: ${option.quantity}`}
-                groupBy={(option) => option.main_category?.name || 'Uncategorized'}
+                groupBy={(option) => option.main_categories?.name || 'Uncategorized'}
                 renderInput={(params) => (
                   <TextField {...params} label="Select Product" fullWidth />
                 )}
@@ -479,7 +537,7 @@ const Transactions: React.FC = () => {
                           secondary={
                             <Box>
                               <Typography variant="body2" component="span">
-                                Quantity: {item.quantity} × ${item.unit_price} = ${item.total_price.toFixed(2)}
+                                Quantity: {item.quantity} × ₹{item.unit_price} = ₹{item.total_price.toLocaleString()}
                               </Typography>
                             </Box>
                           }
@@ -499,7 +557,7 @@ const Transactions: React.FC = () => {
                   
                   <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
                     <Typography variant="h6" align="right">
-                      Total: ${getTotalAmount().toFixed(2)}
+                                                Total: ₹{getTotalAmount().toLocaleString()}
                     </Typography>
                   </Box>
                 </Grid>
@@ -619,8 +677,8 @@ const Transactions: React.FC = () => {
                         <TableRow key={index}>
                           <TableCell>{item.product?.name}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
-                          <TableCell>${item.unit_price.toFixed(2)}</TableCell>
-                          <TableCell>${item.total_price.toFixed(2)}</TableCell>
+                                                      <TableCell>₹{item.unit_price.toLocaleString()}</TableCell>
+                          <TableCell>₹{item.total_price.toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
                       <TableRow>
@@ -628,7 +686,7 @@ const Transactions: React.FC = () => {
                           Total Amount:
                         </TableCell>
                         <TableCell sx={{ fontWeight: 'bold' }}>
-                          ${selectedSale.total_amount.toFixed(2)}
+                          ₹{selectedSale.total_amount.toLocaleString()}
                         </TableCell>
                       </TableRow>
                     </TableBody>

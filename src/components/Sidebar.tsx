@@ -15,6 +15,8 @@ import {
   Inventory as InventoryIcon,
   Category as CategoryIcon,
   Receipt as ReceiptIcon,
+  ShoppingCart as PurchaseIcon,
+  Business as SupplierIcon,
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 
@@ -28,6 +30,8 @@ const menuItems = [
   { text: 'Products', icon: <InventoryIcon />, path: '/products' },
   { text: 'Categories', icon: <CategoryIcon />, path: '/categories' },
   { text: 'Transactions', icon: <ReceiptIcon />, path: '/transactions' },
+  { text: 'Purchases', icon: <PurchaseIcon />, path: '/purchases' },
+  { text: 'Suppliers', icon: <SupplierIcon />, path: '/suppliers' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ open, toggleDrawer }) => {
