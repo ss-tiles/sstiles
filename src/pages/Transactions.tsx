@@ -38,7 +38,8 @@ import {
   Delete as DeleteIcon,
   Remove as RemoveIcon,
   ShoppingCart as ShoppingCartIcon,
-  Visibility as ViewIcon
+  Visibility as ViewIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { supabase } from '../lib/supabase.ts';
 
@@ -83,6 +84,9 @@ const Transactions: React.FC = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [alert, setAlert] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
 
   const [formData, setFormData] = useState({
     customer_name: '',
@@ -157,28 +161,94 @@ const Transactions: React.FC = () => {
 
     try {
       const totalAmount = cartItems.reduce((sum, item) => sum + item.total_price, 0);
-      const saleNumber = generateSaleNumber();
       
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
 
-      // Create sale
-      const { data: saleData, error: saleError } = await supabase
-        .from('sales')
-        .insert([{
-          sale_number: saleNumber,
-          customer_name: formData.customer_name || null,
-          customer_contact: formData.customer_contact || null,
-          total_amount: totalAmount,
-          payment_method: formData.payment_method,
-          payment_status: 'completed',
-          notes: formData.notes || null,
-          created_by: user?.id
-        }])
-        .select()
-        .single();
+      let saleData;
 
-      if (saleError) throw saleError;
+      if (editMode && selectedSale) {
+        // Update existing sale
+        const { data: updatedSale, error: saleError } = await supabase
+          .from('sales')
+          .update({
+            customer_name: formData.customer_name || null,
+            customer_contact: formData.customer_contact || null,
+            total_amount: totalAmount,
+            payment_method: formData.payment_method,
+            notes: formData.notes || null
+          })
+          .eq('id', selectedSale.id)
+          .select()
+          .single();
+
+        if (saleError) throw saleError;
+        saleData = updatedSale;
+
+        // First, restore inventory for old items
+        const { data: oldSaleItems, error: oldItemsError } = await supabase
+          .from('sale_items')
+          .select('*')
+          .eq('sale_id', selectedSale.id);
+
+        if (oldItemsError) throw oldItemsError;
+
+        for (const oldItem of oldSaleItems || []) {
+          const { data: productData, error: getError } = await supabase
+            .from('products')
+            .select('quantity')
+            .eq('id', oldItem.product_id)
+            .single();
+
+          if (getError) throw getError;
+
+          const { error: restoreError } = await supabase
+            .from('products')
+            .update({ 
+              quantity: productData.quantity + oldItem.quantity
+            })
+            .eq('id', oldItem.product_id);
+
+          if (restoreError) throw restoreError;
+        }
+
+        // Delete old sale items
+        const { error: deleteOldItemsError } = await supabase
+          .from('sale_items')
+          .delete()
+          .eq('sale_id', selectedSale.id);
+
+        if (deleteOldItemsError) throw deleteOldItemsError;
+
+        // Delete old financial transaction
+        const { error: deleteFinanceError } = await supabase
+          .from('financial_transactions')
+          .delete()
+          .eq('reference_type', 'sale')
+          .eq('reference_id', selectedSale.id);
+
+        if (deleteFinanceError) throw deleteFinanceError;
+      } else {
+        // Create new sale
+        const saleNumber = generateSaleNumber();
+        const { data: newSale, error: saleError } = await supabase
+          .from('sales')
+          .insert([{
+            sale_number: saleNumber,
+            customer_name: formData.customer_name || null,
+            customer_contact: formData.customer_contact || null,
+            total_amount: totalAmount,
+            payment_method: formData.payment_method,
+            payment_status: 'completed',
+            notes: formData.notes || null,
+            created_by: user?.id
+          }])
+          .select()
+          .single();
+
+        if (saleError) throw saleError;
+        saleData = newSale;
+      }
 
       // Create sale items
       const saleItems = cartItems.map(item => ({
@@ -216,7 +286,7 @@ const Transactions: React.FC = () => {
             quantity: -item.quantity, // Negative for outgoing stock
             reference_type: 'sale',
             reference_id: saleData.id,
-            notes: `Sale: ${saleNumber}`,
+            notes: `Sale: ${saleData.sale_number}`,
             created_by: user?.id
           });
 
@@ -231,14 +301,17 @@ const Transactions: React.FC = () => {
           reference_type: 'sale',
           reference_id: saleData.id,
           amount: totalAmount,
-          description: `Sale ${saleNumber} - ${formData.customer_name || 'Walk-in Customer'}`,
+          description: `Sale ${saleData.sale_number} - ${formData.customer_name || 'Walk-in Customer'}`,
           payment_method: formData.payment_method,
           created_by: user?.id
         });
 
       if (financeError) throw financeError;
 
-      setAlert({ type: 'success', message: `Sale ${saleNumber} created successfully` });
+      const successMessage = editMode ? 
+        `Sale ${saleData.sale_number} updated successfully` : 
+        `Sale ${saleData.sale_number} created successfully`;
+      setAlert({ type: 'success', message: successMessage });
       fetchData();
       handleClose();
     } catch (error) {
@@ -249,6 +322,8 @@ const Transactions: React.FC = () => {
 
   const handleClose = () => {
     setOpen(false);
+    setEditMode(false);
+    setSelectedSale(null);
     setFormData({
       customer_name: '',
       customer_contact: '',
@@ -307,6 +382,142 @@ const Transactions: React.FC = () => {
   const handleViewSale = (sale: Sale) => {
     setSelectedSale(sale);
     setViewDialogOpen(true);
+  };
+
+  const handleEditSale = async (sale: Sale) => {
+    try {
+      // Fetch fresh sale data with items to ensure we have latest data
+      const { data: freshSaleData, error: saleError } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          sale_items(
+            *,
+            product:products(*)
+          )
+        `)
+        .eq('id', sale.id)
+        .single();
+
+      if (saleError) throw saleError;
+
+      // Set form data
+      setFormData({
+        customer_name: freshSaleData.customer_name || '',
+        customer_contact: freshSaleData.customer_contact || '',
+        payment_method: freshSaleData.payment_method,
+        notes: freshSaleData.notes || '',
+      });
+
+      // Set cart items from sale items
+      const items: SaleItem[] = freshSaleData.sale_items?.map((item: any) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total_price: item.total_price,
+        product: item.product
+      })) || [];
+
+      setCartItems(items);
+      setSelectedSale(freshSaleData);
+      setEditMode(true);
+      setOpen(true);
+    } catch (error) {
+      console.error('Error loading sale for edit:', error);
+      setAlert({ type: 'error', message: 'Failed to load sale for editing' });
+    }
+  };
+
+  const handleDeleteSale = (sale: Sale) => {
+    setSaleToDelete(sale);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteSale = async () => {
+    if (!saleToDelete) return;
+
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Fetch sale items to restore inventory
+      const { data: saleItems, error: itemsError } = await supabase
+        .from('sale_items')
+        .select('*')
+        .eq('sale_id', saleToDelete.id);
+
+      if (itemsError) throw itemsError;
+
+      // Restore product quantities
+      for (const item of saleItems || []) {
+        // First get current quantity
+        const { data: productData, error: getError } = await supabase
+          .from('products')
+          .select('quantity')
+          .eq('id', item.product_id)
+          .single();
+
+        if (getError) throw getError;
+
+        // Then update with restored quantity
+        const { error: restoreError } = await supabase
+          .from('products')
+          .update({ 
+            quantity: productData.quantity + item.quantity
+          })
+          .eq('id', item.product_id);
+
+        if (restoreError) throw restoreError;
+
+        // Create inventory movement record for restoration
+        const { error: movementError } = await supabase
+          .from('inventory_movements')
+          .insert({
+            product_id: item.product_id,
+            movement_type: 'in',
+            quantity: item.quantity, // Positive for incoming stock
+            reference_type: 'sale_deletion',
+            reference_id: saleToDelete.id,
+            notes: `Sale deleted: ${saleToDelete.sale_number} - Stock restored`,
+            created_by: user?.id
+          });
+
+        if (movementError) throw movementError;
+      }
+
+      // Delete financial transaction record
+      const { error: financeDeleteError } = await supabase
+        .from('financial_transactions')
+        .delete()
+        .eq('reference_type', 'sale')
+        .eq('reference_id', saleToDelete.id);
+
+      if (financeDeleteError) throw financeDeleteError;
+
+      // Delete sale items first (foreign key constraint)
+      const { error: deleteItemsError } = await supabase
+        .from('sale_items')
+        .delete()
+        .eq('sale_id', saleToDelete.id);
+
+      if (deleteItemsError) throw deleteItemsError;
+
+      // Delete the sale
+      const { error: deleteSaleError } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', saleToDelete.id);
+
+      if (deleteSaleError) throw deleteSaleError;
+
+      setAlert({ type: 'success', message: `Sale ${saleToDelete.sale_number} deleted successfully and stock restored` });
+      fetchData();
+      setDeleteDialogOpen(false);
+      setSaleToDelete(null);
+    } catch (error) {
+      console.error('Error deleting sale:', error);
+      setAlert({ type: 'error', message: 'Failed to delete sale' });
+    }
   };
 
   const getTotalAmount = () => {
@@ -412,8 +623,25 @@ const Transactions: React.FC = () => {
                         size="small"
                         onClick={() => handleViewSale(sale)}
                         color="primary"
+                        title="View Sale"
                       >
                         <ViewIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleEditSale(sale)}
+                        color="secondary"
+                        title="Edit Sale"
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteSale(sale)}
+                        color="error"
+                        title="Delete Sale"
+                      >
+                        <DeleteIcon />
                       </IconButton>
                     </TableCell>
                   </TableRow>
@@ -433,10 +661,10 @@ const Transactions: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* New Sale Dialog */}
+      {/* New/Edit Sale Dialog */}
       <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
         <DialogTitle>
-          Create New Sale
+          {editMode ? `Edit Sale - ${selectedSale?.sale_number}` : 'Create New Sale'}
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={3} sx={{ mt: 1 }}>
@@ -606,7 +834,7 @@ const Transactions: React.FC = () => {
             variant="contained"
             disabled={cartItems.length === 0}
           >
-            Complete Sale
+            {editMode ? 'Update Sale' : 'Complete Sale'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -698,6 +926,35 @@ const Transactions: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Confirm Delete Sale</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete sale <strong>{saleToDelete?.sale_number}</strong>?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            This action will:
+          </Typography>
+          <Typography variant="body2" color="text.secondary" component="ul" sx={{ mt: 1 }}>
+            <li>Delete the sale and all its items</li>
+            <li>Restore product stock quantities</li>
+            <li>Remove associated financial records</li>
+            <li>This action cannot be undone</li>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={confirmDeleteSale} 
+            variant="contained" 
+            color="error"
+          >
+            Delete Sale
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

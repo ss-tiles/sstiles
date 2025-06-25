@@ -12,7 +12,6 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  Notifications as NotificationsIcon,
   AccountCircle,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
@@ -83,11 +82,6 @@ const Navbar: React.FC<NavbarProps> = ({ open, toggleDrawer }) => {
           Stock Register
         </Typography>
         <Box sx={{ display: 'flex' }}>
-          <IconButton color="inherit">
-            <Badge badgeContent={4} color="error">
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
           <IconButton
             size="large"
             edge="end"
