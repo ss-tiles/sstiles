@@ -38,11 +38,14 @@ function App() {
     setOpen(!open);
   };
 
+  // Get basename from package.json homepage for GitHub Pages
+  const basename = process.env.NODE_ENV === 'production' ? '/sstiles' : '';
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <Router>
+        <Router basename={basename}>
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route
